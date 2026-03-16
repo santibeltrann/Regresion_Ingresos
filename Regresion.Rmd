@@ -1,0 +1,218 @@
+---
+title: "Reporte I Anáisis"
+author: "Santiago Beltrán & Jacobo Urrea"
+date: "2026-03-16"
+output: html_document
+---
+
+## Librerías necesarías
+
+```{r}
+library(readr)
+library(ggplot2)
+library(gridExtra)
+library(GGally)
+library(corrplot)
+```
+
+## Importar dataset
+
+```{r}
+datos <- read_csv("~/Downloads/concrete_data.csv")
+colnames(datos) <- c("cement", "slag", "ash", "water", "superplasticizer", "coarse_agg", "fine_agg", "age", "strength")
+
+head(datos)
+```
+
+# Introducción y análisis previo de los datos
+
+## Gráficos variables dependientes e independiente
+
+```{r}
+p1 <- ggplot(datos, aes(x = cement, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Cemento", x = "Cemento (kg/m³)", y = "Resistencia (MPa)")
+
+p2 <- ggplot(datos, aes(x = slag, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Escoria", x = "Escoria (kg/m³)", y = "Resistencia (MPa)")
+
+
+p3 <- ggplot(datos, aes(x = ash, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Ceniza", x = "Ceniza (kg/m³)", y = "Resistencia (MPa)")
+
+p4 <- ggplot(datos, aes(x = water, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Agua", x = "Agua (kg/m³)", y = "Resistencia (MPa)")
+
+p5 <- ggplot(datos, aes(x = superplasticizer, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Superplastificante", x = "Superplastificante (kg/m³)", y = "Resistencia (MPa)")
+
+
+p6 <- ggplot(datos, aes(x = coarse_agg, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Agregado Grueso", x = "Agregado Grueso (kg/m³)", y = "Resistencia (MPa)")
+
+p7 <- ggplot(datos, aes(x = fine_agg, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Agregado Fino", x = "Agregado Fino (kg/m³)", y = "Resistencia (MPa)")
+
+p8 <- ggplot(datos, aes(x = age, y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Edad", x = "Edad (días)", y = "Resistencia (MPa)")
+
+
+#mostrar los gráficos
+grid.arrange(p5)
+
+```
+
+## Gráficos de variables independientes (X)
+
+### lo ideal es que se presente poca linealidad o correlación entre las variables explicativas.
+
+```{r}
+independientes <- datos[, c("cement", "slag", "ash", "water", 
+                          "superplasticizer", "coarse_agg", "fine_agg", "age")]
+
+ggpairs(independientes,
+        lower = list(continuous = wrap("points", alpha = 0.3, color = "#2C7BB6", size = 0.8)),
+        upper = list(continuous = wrap("cor", size = 3.5)),
+        diag = list(continuous = wrap("densityDiag", fill = "#2C7BB6", alpha = 0.4)),
+        title = "Matriz de dispersión entre variables independientes")
+
+```
+
+```{r}
+matrix <- cor(independientes)
+round(matrix,2)
+
+corrplot(matrix, method = "color", type="upper", tl.cex=0.8)
+```
+
+```{r}
+# Matriz de correlaciones entre variables independientes
+round(cor(datos[, c("cement", "slag", "ash", "water", 
+                  "superplasticizer", "coarse_agg", "fine_agg", "log_age")]), 3)
+```
+
+```{r}
+l3 <- ggplot(datos, aes(x = water, y = fine_agg)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE)
+
+grid.arrange(l3)
+```
+
+## Validación si existen solo relaciones lineales o también hay relaciones no lineales.
+
+```{r}
+
+# Correlaciones de Pearson entre cada variable independiente y la dependiente
+cor_matrix <- cor(datos[, c("cement", "slag", "ash", "water", 
+                          "superplasticizer", "coarse_agg", "fine_agg", "age", "strength")])
+
+# Ver correlaciones solo con la variable dependiente
+round(cor_matrix[, "strength"], 3)
+
+```
+
+## Transformación de datos
+
+```{r}
+cor(datos$age, datos$strength)
+cor(log(datos$age), datos$strength)
+
+#Creación de la variable transformada
+datos$log_age <- log(datos$age)
+```
+
+```{r}
+p8_1 <- ggplot(datos, aes(x = log(age), y = strength)) +
+  geom_point(alpha = 0.4, color = "#2C7BB6") +
+  geom_smooth(method = "loess", color = "red", se = FALSE) +
+  labs(title = "Resistencia vs Edad", x = "Edad (días)", y = "Resistencia (MPa)")
+
+
+grid.arrange(p8_1)
+```
+
+# Estimación de modelos, ajuste y validación
+
+## Modelo completo usando age sin transformación
+
+```{r}
+
+#modelo usando age sin transformación
+modelo <- lm(strength ~ cement + slag + ash + water + superplasticizer + coarse_agg + fine_agg + age, datos)
+
+summary(modelo)
+```
+
+## Modelo completo usando age con transformación (log_age)
+
+```{r}
+#modelo usando age con transformación
+modelo2 <- lm(strength ~ cement + slag + ash + water + superplasticizer + coarse_agg + fine_agg + log_age, datos)
+summary(modelo2)
+```
+
+## Reestimación del modelo eliminando variables no significativas
+
+```{r}
+#modelo eliminando variable no significativa (superplasticizer)
+
+modelo3 <- lm(strength ~ cement + slag + ash + water + coarse_agg + fine_agg + log_age, datos)
+
+summary(modelo3)
+```
+
+## Validación de supuestos del modelo
+
+### Linealidad
+
+#### Para validar la linealidad del modelo se usa el gráfico de residuos vs valores ajustados
+```{r}
+# Gráfico de residuos vs valores ajustados
+plot(modelo3$fitted.values, modelo3$residuals,
+     main = "Residuos vs Valores Ajustados",
+     xlab = "Valores Ajustados",
+     ylab = "Residuos",
+     pch = 20, col = "#2C7BB6", alpha = 0.5)
+abline(h = 0, col = "red", lwd = 2)
+```
+
+```{r}
+# 1. Histograma de residuos
+hist(modelo3$residuals,
+     main = "Histograma de Residuos",
+     xlab = "Residuos",
+     ylab = "Frecuencia",
+     col = "#2C7BB6",
+     border = "white",
+     breaks = 30)
+
+```
+
+```{r}
+qqnorm(modelo3$residuals,
+       main = "QQ-Plot de Residuos",
+       pch = 20, col = "#2C7BB6")
+qqline(modelo3$residuals, col = "red", lwd = 2)
+```
+
+```{r}
+shapiro.test(modelo3$residuals)
+```
+
+
