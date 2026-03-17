@@ -15,12 +15,13 @@ library(GGally)
 library(corrplot)
 library(lmtest)
 library(sandwich)
+library(car)
 ```
 
 ## Importar dataset
 
 ```{r}
-datos <- read_csv("~/Downloads/concrete_data.csv")
+datos <- read_csv("concrete_data.csv")
 colnames(datos) <- c("cement", "slag", "ash", "water", "superplasticizer", "coarse_agg", "fine_agg", "age", "strength")
 
 head(datos)
@@ -143,7 +144,7 @@ datos$log_age <- log(datos$age)
 p8_1 <- ggplot(datos, aes(x = log(age), y = strength)) +
   geom_point(alpha = 0.4, color = "#2C7BB6") +
   geom_smooth(method = "loess", color = "red", se = FALSE) +
-  labs(title = "Resistencia vs Edad", x = "Edad (días)", y = "Resistencia (MPa)")
+  labs(title = "Resistencia vs Edad", x = "log(Edad)", y = "Resistencia (MPa)")
 
 
 grid.arrange(p8_1)
@@ -179,16 +180,42 @@ modelo3 <- lm(strength ~ cement + slag + ash + water + coarse_agg + fine_agg + l
 summary(modelo3)
 ```
 
-## Validación de supuestos del modelo
+## Reestimación del modelo con WLS
+
+Esta reestimación se hizo necesaria dado el cumplimiento del supuesto de homocedasticidad que el modelo anterior no pudo cubrir (como se verá proximamente).
+
+```{r}
+
+# Cálculo de los pesos 
+pesos <- 1 / fitted(lm(abs(modelo3$residuals) ~ modelo3$fitted.values))^2
+
+# Estimación del modelo WLS
+modelo_wls <- lm(strength ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age, 
+                  data = datos, weights = pesos)
+
+summary(modelo_wls)
+```
+
+
+# Validación de supuestos del modelo
 
 ### Linealidad
 
 Para validar la linealidad del modelo se usa el gráfico de residuos vs valores ajustados
 
 ```{r}
-# Gráfico de residuos vs valores ajustados
+# Gráfico de residuos vs valores ajustados Modelo 3
 plot(modelo3$fitted.values, modelo3$residuals,
      main = "Residuos vs Valores Ajustados",
+     xlab = "Valores Ajustados",
+     ylab = "Residuos",
+     pch = 20, col = "#2C7BB6", alpha = 0.5)
+abline(h = 0, col = "red", lwd = 2)
+
+# Gáfico de residuos vs valores ajustado Modelo WLS
+plot(modelo_wls$fitted.values, modelo_wls$residuals,
+     main = "Residuos vs Valores Ajustados (WLS)",
      xlab = "Valores Ajustados",
      ylab = "Residuos",
      pch = 20, col = "#2C7BB6", alpha = 0.5)
@@ -198,27 +225,26 @@ abline(h = 0, col = "red", lwd = 2)
 ### Normalidad de residuos
 
 ```{r}
-# 1. Histograma de residuos
-hist(modelo3$residuals,
-     main = "Histograma de Residuos",
-     xlab = "Residuos",
-     ylab = "Frecuencia",
-     col = "#2C7BB6",
-     border = "white",
-     breaks = 30)
-
-```
-
-```{r}
+# QQ-plot Modelo 3
 qqnorm(modelo3$residuals,
        main = "QQ-Plot de Residuos",
        pch = 20, col = "#2C7BB6")
 qqline(modelo3$residuals, col = "red", lwd = 2)
+
+# QQ-plot Modelo WLS
+qqnorm(modelo_wls$residuals,
+       main = "QQ-Plot de Residuos WLS",
+       pch = 20, col = "#2C7BB6")
+qqline(modelo_wls$residuals, col = "red", lwd = 2)
+
 ```
 
 ```{r}
-#Prueba Shapiro para evaluar normalidad
+#Prueba Shapiro-Wilk para evaluar normalidad Modelo 3
 shapiro.test(modelo3$residuals)
+
+#Prueba Shapiro-Wilk para evaluar normalidad Modelo WLS
+shapiro.test(modelo_wls$residuals)
 ```
 
 La prueba Shapiro-Wilk rechaza la normalidad de los residuos (dado que el p-value es menor al nivel de significancia 0.05). Sin embargo, dado el tamaño de muestra (n = 1030), esta prueba es muy sensible a desviaciones mínimas. El QQ-Plot muestra que los residuos siguen aproximadamente una distribución normal en su parte central, con leves desviaciones en las colas.
@@ -226,17 +252,23 @@ La prueba Shapiro-Wilk rechaza la normalidad de los residuos (dado que el p-valu
 Sin embargo, para mayor seguridad en la decisión, se plantea usar un método alternativo a Shapiro-Wilk, que en este caso es la prueba Kolmogorov-Smirnov, el cual es menos sensible al tamaño de la muestra ortorgando un resultado menos influenciado por este mismo.
 
 ```{r}
-
+#Prueba Kolmogorov-Smirnov para evaluar normalidad Modelo 3
 ks.test(modelo3$residuals, "pnorm", 
         mean = mean(modelo3$residuals), 
         sd = sd(modelo3$residuals))
+
+ks.test(modelo_wls$residuals, "pnorm", 
+        mean = mean(modelo_wls$residuals), 
+        sd = sd(modelo_wls$residuals))
 ```
 
 En esta ocasión, la prueba Kolmogorov-Smirnov no rechaza normalidad, (p-value = 0.068). Esto sumado a que el QQ-Plot muestra un buen ajuste en la parte central de la distribución, permite concluir que el supuesto de normalidad de errores se cumple razonablemente.
 
-
 ## Homocedasticidad
+
 ```{r}
+
+#Gráfico de escala-localización Modelo 3
 plot(modelo3$fitted.values, sqrt(abs(modelo3$residuals)),
      main = "Scale-Location",
      xlab = "Valores Ajustados",
@@ -247,22 +279,26 @@ abline(lm(sqrt(abs(modelo3$residuals)) ~ modelo3$fitted.values),
 ```
 
 ```{r}
+#Prueba de Breusch-Pagan Modelo 3
 bptest(modelo3)
 ```
 
 
 ```{r}
-pesos <- 1 / fitted(lm(abs(modelo3$residuals) ~ modelo3$fitted.values))^2
 
-# Paso 2: estimar el modelo WLS
-modelo_wls <- lm(strength ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age, 
-                  data = datos, weights = pesos)
-
-summary(modelo_wls)
+#Gráfico de escala-localización Modelo WLS
+plot(modelo_wls$fitted.values, sqrt(abs(modelo_wls$residuals)),
+     main = "Scale-Location",
+     xlab = "Valores Ajustados",
+     ylab = "Raíz de |Residuos|",
+     pch = 20, col = "#2C7BB6")
+abline(lm(sqrt(abs(modelo_wls$residuals)) ~ modelo_wls$fitted.values), 
+       col = "red", lwd = 2)
 ```
 
+
 ```{r}
+#Prueba de Breusch-Pagan Modelo WLS
 bptest(modelo_wls)
 ```
 
