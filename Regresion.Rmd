@@ -198,6 +198,31 @@ summary(modelo_wls)
 ```
 
 
+## Reestimación del modelo WLS con distinto peso
+```{r}
+pesos2 <- 1 / datos$cement
+
+# Estimación del modelo WLS
+modelo_wls2 <- lm(strength ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age, 
+                  data = datos, weights = pesos2)
+
+summary(modelo_wls2)
+```
+
+Justificación de elegir el cemento como parte de la estimación de los pesos del modelo
+
+```{r}
+plot(datos$cement, abs(modelo3$residuals),
+     main = "Residuos absolutos vs Cemento",
+     xlab = "Cemento (kg/m³)",
+     ylab = "|Residuos|",
+     pch = 20, col = "#2C7BB6")
+abline(lm(abs(modelo3$residuals) ~ datos$cement), col = "red", lwd = 2)
+```
+Dado que el gráfico entre residuos absolutos vs cemento muestra una tendencia positiva, se indica que la varianza de los errores es proporcional a la cantidad de cemento en la mezcla.
+
+
 # Validación de supuestos del modelo
 
 ### Linealidad
@@ -220,6 +245,14 @@ plot(modelo_wls$fitted.values, modelo_wls$residuals,
      ylab = "Residuos",
      pch = 20, col = "#2C7BB6", alpha = 0.5)
 abline(h = 0, col = "red", lwd = 2)
+
+#Gráfico de residuos vs valores ajustados Modelo WLS 2
+plot(modelo_wls2$fitted.values, modelo_wls2$residuals,
+     main = "Residuos vs Valores Ajustados (WLS) 2",
+     xlab = "Valores Ajustados",
+     ylab = "Residuos",
+     pch = 20, col = "#2C7BB6", alpha = 0.5)
+abline(h = 0, col = "red", lwd = 2)
 ```
 
 ### Normalidad de residuos
@@ -237,6 +270,12 @@ qqnorm(modelo_wls$residuals,
        pch = 20, col = "#2C7BB6")
 qqline(modelo_wls$residuals, col = "red", lwd = 2)
 
+# QQ-plot Modelo WLS 2
+qqnorm(modelo_wls2$residuals,
+       main = "QQ-Plot de Residuos WLS 2",
+       pch = 20, col = "#2C7BB6")
+qqline(modelo_wls2$residuals, col = "red", lwd = 2)
+
 ```
 
 ```{r}
@@ -245,6 +284,9 @@ shapiro.test(modelo3$residuals)
 
 #Prueba Shapiro-Wilk para evaluar normalidad Modelo WLS
 shapiro.test(modelo_wls$residuals)
+
+#Prueba Shapiro-Wilk para evaluar normalidad Modelo WLS 2
+shapiro.test(modelo_wls2$residuals)
 ```
 
 La prueba Shapiro-Wilk rechaza la normalidad de los residuos (dado que el p-value es menor al nivel de significancia 0.05). Sin embargo, dado el tamaño de muestra (n = 1030), esta prueba es muy sensible a desviaciones mínimas. El QQ-Plot muestra que los residuos siguen aproximadamente una distribución normal en su parte central, con leves desviaciones en las colas.
@@ -257,12 +299,17 @@ ks.test(modelo3$residuals, "pnorm",
         mean = mean(modelo3$residuals), 
         sd = sd(modelo3$residuals))
 
+#Prueba Kolmogorov-Smirnov para evaluar normalidad Modelo WLS
 ks.test(modelo_wls$residuals, "pnorm", 
         mean = mean(modelo_wls$residuals), 
         sd = sd(modelo_wls$residuals))
-```
 
-En esta ocasión, la prueba Kolmogorov-Smirnov no rechaza normalidad, (p-value = 0.068). Esto sumado a que el QQ-Plot muestra un buen ajuste en la parte central de la distribución, permite concluir que el supuesto de normalidad de errores se cumple razonablemente.
+#Prueba Kolmogorov-Smirnov para evaluar normalidad Modelo WLS 2
+ks.test(modelo_wls2$residuals, "pnorm", 
+        mean = mean(modelo_wls2$residuals), 
+        sd = sd(modelo_wls2$residuals))
+
+```
 
 ## Homocedasticidad
 
@@ -301,4 +348,79 @@ abline(lm(sqrt(abs(modelo_wls$residuals)) ~ modelo_wls$fitted.values),
 #Prueba de Breusch-Pagan Modelo WLS
 bptest(modelo_wls)
 ```
+
+```{r}
+#Gráfico de escala-localización Modelo WLS 2
+plot(modelo_wls2$fitted.values, sqrt(abs(modelo_wls2$residuals)),
+     main = "Scale-Location",
+     xlab = "Valores Ajustados",
+     ylab = "Raíz de |Residuos|",
+     pch = 20, col = "#2C7BB6")
+abline(lm(sqrt(abs(modelo_wls2$residuals)) ~ modelo_wls2$fitted.values), 
+       col = "red", lwd = 2)
+```
+
+
+```{r}
+#Prueba de Breusch-Pagan Modelo WLS 2
+bptest(modelo_wls2)
+```
+
+
+## Independencia de residuos
+
+```{r}
+
+#Prueba Durbin-Watson Modelo 3
+dwtest(modelo3)
+
+#Prueba Durbin-Watson Modelo WLS (toca extraer los residuos manualmente)
+residuos_wls <- residuals(modelo_wls)
+dwtest(lm(residuos_wls ~ 1))
+
+#Prueba Durbin-Watson Modelo WLS 2 (toca extraer los residuos manualmente)
+residuos_wls2 <- residuals(modelo_wls2)
+dwtest(lm(residuos_wls2 ~ 1))
+```
+
+Inicialmente, dado el resultado de la prueba de Durbin-Watson se rechaza la independencia de los residuos dado el p valor (p < 2.2e-16) y que los valores DW están alejado del 2. Sin embargo hay que elaborar un análisis para poder explicar el porque pasa esto. 
+
+Una posible causa de este resultado, es que el dataset este ordenado por alguna variable (por ejemplo la cantidad de cemento o or el tipo de mezcla). En caso tal que se presente esta situación, esto hace que observaciones consecutivas sean similares entre sí, generando una autorocorrelación artificial que no refleja un problema real del modelo. 
+
+Para verificar esta hipótesis se genera el siguiente gráfico, para detectar si los residuos tienen algún patrón cuando se ordenan secuencialmente 
+
+```{r}
+plot(modelo3$residuals, type = "l",
+     main = "Residuos en orden de observación",
+     xlab = "Índice",
+     ylab = "Residuos")
+abline(h = 0, col = "red")
+```
+
+Observando el gráfico con detalle, hay algunas zonas donde los residuos parecen agruparse (por ejemplo alrededor del índice 100-200 los residuos son más pequeños, y cerca del 400 hay picos grandes). Esto sugiere que el dataset tiene cierto ordenamiento por tipo de mezcla o experimento, lo cual genera autocorrelación artificial.
+
+La prueba de Durbin-Watson rechaza la independencia de residuos en los 3 modelos (DW ≈ 1.3, p < 2.2e-16). Sin embargo, el gráfico de residuos en orden de observación no muestra patrones sistemáticos claros de tendencia o ciclos — los residuos oscilan aleatoriamente alrededor del cero. Dado que los datos son de corte transversal y provienen de experimentos de laboratorio agrupados por tipo de mezcla, la autocorrelación detectada se atribuye al ordenamiento del dataset y no a una violación estructural del supuesto de independencia.
+
+## Multicolinealidad
+
+```{r}
+#VIF Modelo 3
+vif(modelo3)
+
+#VIF Modelo WLS
+vif(modelo_wls)
+
+#VIF Modelo WLS 2
+vif(modelo_wls2)
+```
+
+# Bondad de ajuste entre modelos
+
+```{r}
+AIC(modelo3, modelo_wls, modelo_wls2)
+BIC(modelo3, modelo_wls, modelo_wls2)
+```
+
+Los modelos WLS superan al modelo OLS en todas las métricas de bondad de ajuste. Tanto el AIC como el BIC son menores en los modelos WLS, indicando mejor ajuste, mientras que el r2 ajustado también muestra mejor rendimiento en los modelos WLS que en el OLS (ligeramente mejor en el WLS que en el WLS 2) . Dado que el Modelo WLS2 además cumple los supuestos de normalidad y homocedasticidad, este es el modelo final seleccionado.
+
 
