@@ -11,6 +11,9 @@ library(car)
 library(lmtest)
 library(MASS)
 library(emmeans)
+library(readxl)
+library(knitr)    
+library(tidyr)
 ```
 
 ```{r}
@@ -186,15 +189,57 @@ BIC(modelo3, modelo_wls, modelo_wls2)
 ```
 
 Los modelos WLS superan al modelo OLS en todas las métricas de bondad de ajuste. Tanto el AIC como el BIC son menores en los modelos WLS, indicando mejor ajuste, mientras que el r2 ajustado también muestra mejor rendimiento en los modelos WLS que en el OLS (ligeramente mejor en el WLS que en el WLS 2) . Dado que el Modelo WLS2 además cumple los supuestos de normalidad y homocedasticidad, este es el modelo final seleccionado.
+```{r}
+n <- nobs(modelo_wls2)              # número de observaciones
+p <- length(coef(modelo_wls2))     # número de parámetros (incluye intercepto)
+```
 
 ```{r}
 # Cook's Distance
-plot(cooks.distance(modelo_wls2), type = "h")
+cook   <- cooks.distance(modelo_wls2)
 
-# DFFITS
-dffits_vals <- dffits(modelo_wls2)
+thr_cook_soft <- 4/(n - p)
+thr_cook_hard <- 1
 
-# Leverage
-plot(hatvalues(modelo_wls2))
+tab_cook <- tibble(
+  obs = seq_len(n),
+  cook = as.numeric(cook),
+  flag_soft = cook > thr_cook_soft,
+  flag_hard = cook > thr_cook_hard
+) %>% arrange(desc(cook))
+
+tab_cook
 
 ```
+```{r}
+dff <- dffits(modelo_wls2)
+
+thr_dffits <- 2*sqrt(p/n)
+
+tab_dff <- tibble(
+  obs = seq_len(n),
+  dffits = as.numeric(dff),
+  flag = abs(dffits) > thr_dffits
+) %>% arrange(desc(abs(dffits)))
+
+tab_dff
+
+```
+
+```{r}
+dfb <- dfbetas(modelo_wls2)
+
+thr_dfbetas <- 2/sqrt(n)
+
+tab_dfb <- as.data.frame(dfb) %>%
+  mutate(obs = seq_len(n)) %>%
+  pivot_longer(
+    cols = -obs, names_to = "coef", values_to = "dfbetas"
+  ) %>%
+  mutate(flag = abs(dfbetas) > thr_dfbetas) %>%
+  arrange(desc(abs(dfbetas)))
+
+tab_dfb
+
+```
+
