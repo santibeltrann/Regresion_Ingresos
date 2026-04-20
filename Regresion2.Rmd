@@ -242,4 +242,56 @@ tab_dfb <- as.data.frame(dfb) %>%
 tab_dfb
 
 ```
+```{r}
+m_null <- lm(SALARY ~ 1, data = datos)
+m_full <- modelo_wls2
 
+scope_list <- list(lower = ~ 1, 
+                   upper  = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age)
+m_step_aic <- MASS::stepAIC(m_null, scope = scope_list, direction = "forward", trace = TRUE)
+summary(m_step_aic)ç
+broom::tidy(m_step_aic, conf.int = TRUE)
+broom::glance(m_step_aic)
+
+n <- nrow(dat)
+m_step_bic <- step(m_null,
+                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age),
+                   direction = "forward",
+                   k = log(n),
+                   trace = TRUE)
+summary(m_step_bic)
+
+```
+```{r}
+m_step_aic <- MASS::stepAIC(m_full, direction = "backward", trace = TRUE)
+summary(m_step_aic)
+broom::tidy(m_step_aic, conf.int = TRUE)
+broom::glance(m_step_aic)
+```
+```{r}
+scope_list <- list(lower = ~ 1, 
+                   upper  = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age)
+
+m_zero <- lm(strength ~ log_age, data = datos)
+
+m_step_aic <- MASS::stepAIC(m_zero, scope = scope_list, direction = "both", trace = TRUE)
+summary(m_step_aic)
+broom::tidy(m_step_aic, conf.int = TRUE)
+broom::glance(m_step_aic)
+
+
+n <- nrow(dat)
+m_step_bic <- step(m_zero,
+                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age),
+                   direction = "both",
+                   k = log(n),
+                   trace = TRUE)
+summary(m_step_bic)
+
+```
+```{r}
+```
