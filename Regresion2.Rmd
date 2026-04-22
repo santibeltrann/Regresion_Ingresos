@@ -4,6 +4,7 @@ author: "Santiago Beltran y Jacobo Urrea"
 date: "2026-04-18"
 output: html_document
 ---
+
 ```{r}
 library(tidyverse)
 library(broom)
@@ -13,8 +14,12 @@ library(MASS)
 library(emmeans)
 library(readxl)
 library(knitr)    
+library(dplyr)
 library(tidyr)
+library(modelsummary)
 ```
+
+### Cargar los datos
 
 ```{r}
 datos <- read_csv("concrete_data.csv")
@@ -22,12 +27,18 @@ colnames(datos) <- c("cement", "slag", "ash", "water", "superplasticizer", "coar
 
 head(datos)
 ```
+
+### Primer modelo
+
 ```{r}
 #modelo usando age sin transformación
 modelo <- lm(strength ~ cement + slag + ash + water + superplasticizer + coarse_agg + fine_agg + age, datos)
 
 summary(modelo)
 ```
+
+### Segundo modelo
+
 ```{r}
 #modelo usando age con transformación
 datos$log_age <- log(datos$age)
@@ -35,6 +46,9 @@ modelo2 <- lm(strength ~ cement + slag + ash + water + superplasticizer + coarse
 summary(modelo2)
 
 ```
+
+### Tercer modelo
+
 ```{r}
 #modelo eliminando variable no significativa (superplasticizer)
 
@@ -42,6 +56,9 @@ modelo3 <- lm(strength ~ cement + slag + ash + water + coarse_agg + fine_agg + l
 
 summary(modelo3)
 ```
+
+### Modelo con pesos
+
 ```{r}
 # Cálculo de los pesos 
 pesos <- 1 / fitted(lm(abs(modelo3$residuals) ~ modelo3$fitted.values))^2
@@ -55,6 +72,7 @@ summary(modelo_wls)
 ```
 
 ## Reestimación del modelo WLS con distinto peso
+
 ```{r}
 pesos2 <- 1 / datos$cement
 
@@ -65,6 +83,7 @@ modelo_wls2 <- lm(strength ~ cement + slag + ash + water +
 
 summary(modelo_wls2)
 ```
+
 # Validación de supuestos del modelo
 
 ### Linealidad
@@ -133,7 +152,6 @@ bptest(modelo_wls)
 bptest(modelo_wls2)
 ```
 
-
 ## Independencia de residuos
 
 ```{r}
@@ -150,11 +168,11 @@ residuos_wls2 <- residuals(modelo_wls2)
 dwtest(lm(residuos_wls2 ~ 1))
 ```
 
-Inicialmente, dado el resultado de la prueba de Durbin-Watson se rechaza la independencia de los residuos dado el p valor (p < 2.2e-16) y que los valores DW están alejado del 2. Sin embargo hay que elaborar un análisis para poder explicar el porque pasa esto. 
+Inicialmente, dado el resultado de la prueba de Durbin-Watson se rechaza la independencia de los residuos dado el p valor (p \< 2.2e-16) y que los valores DW están alejado del 2. Sin embargo hay que elaborar un análisis para poder explicar el porque pasa esto.
 
-Una posible causa de este resultado, es que el dataset este ordenado por alguna variable (por ejemplo la cantidad de cemento o or el tipo de mezcla). En caso tal que se presente esta situación, esto hace que observaciones consecutivas sean similares entre sí, generando una autorocorrelación artificial que no refleja un problema real del modelo. 
+Una posible causa de este resultado, es que el dataset este ordenado por alguna variable (por ejemplo la cantidad de cemento o or el tipo de mezcla). En caso tal que se presente esta situación, esto hace que observaciones consecutivas sean similares entre sí, generando una autorocorrelación artificial que no refleja un problema real del modelo.
 
-Para verificar esta hipótesis se genera el siguiente gráfico, para detectar si los residuos tienen algún patrón cuando se ordenan secuencialmente 
+Para verificar esta hipótesis se genera el siguiente gráfico, para detectar si los residuos tienen algún patrón cuando se ordenan secuencialmente
 
 ```{r}
 plot(modelo3$residuals, type = "l",
@@ -166,7 +184,7 @@ abline(h = 0, col = "red")
 
 Observando el gráfico con detalle, hay algunas zonas donde los residuos parecen agruparse (por ejemplo alrededor del índice 100-200 los residuos son más pequeños, y cerca del 400 hay picos grandes). Esto sugiere que el dataset tiene cierto ordenamiento por tipo de mezcla o experimento, lo cual genera autocorrelación artificial.
 
-La prueba de Durbin-Watson rechaza la independencia de residuos en los 3 modelos (DW ≈ 1.3, p < 2.2e-16). Sin embargo, el gráfico de residuos en orden de observación no muestra patrones sistemáticos claros de tendencia o ciclos — los residuos oscilan aleatoriamente alrededor del cero. Dado que los datos son de corte transversal y provienen de experimentos de laboratorio agrupados por tipo de mezcla, la autocorrelación detectada se atribuye al ordenamiento del dataset y no a una violación estructural del supuesto de independencia.
+La prueba de Durbin-Watson rechaza la independencia de residuos en los 3 modelos (DW ≈ 1.3, p \< 2.2e-16). Sin embargo, el gráfico de residuos en orden de observación no muestra patrones sistemáticos claros de tendencia o ciclos — los residuos oscilan aleatoriamente alrededor del cero. Dado que los datos son de corte transversal y provienen de experimentos de laboratorio agrupados por tipo de mezcla, la autocorrelación detectada se atribuye al ordenamiento del dataset y no a una violación estructural del supuesto de independencia.
 
 ## Multicolinealidad
 
@@ -189,6 +207,209 @@ BIC(modelo3, modelo_wls, modelo_wls2)
 ```
 
 Los modelos WLS superan al modelo OLS en todas las métricas de bondad de ajuste. Tanto el AIC como el BIC son menores en los modelos WLS, indicando mejor ajuste, mientras que el r2 ajustado también muestra mejor rendimiento en los modelos WLS que en el OLS (ligeramente mejor en el WLS que en el WLS 2) . Dado que el Modelo WLS2 además cumple los supuestos de normalidad y homocedasticidad, este es el modelo final seleccionado.
+
+###Variables Confusoras
+
+```{r}
+
+# Extraer coeficientes con nombres
+coef_full <- broom::tidy(modelo_wls2) %>% 
+  dplyr::select(term, estimate) %>% 
+  dplyr::rename(completo = estimate)
+coef_water <- broom::tidy(modelo_sin_water) %>% 
+  dplyr::select(term, estimate) %>% 
+  dplyr::rename(sin_water = estimate)
+
+coef_cement <- broom::tidy(modelo_sin_cement) %>% 
+  dplyr::select(term, estimate) %>% 
+  dplyr::rename(sin_cement = estimate)
+
+coef_logage <- broom::tidy(modelo_sin_logage) %>% 
+  dplyr::select(term, estimate) %>% 
+  dplyr::rename(sin_logage = estimate)
+
+
+# Unir todo por nombre de variable
+tabla_conf <- coef_full %>%
+  left_join(coef_water, by = "term") %>%
+  left_join(coef_cement, by = "term") %>%
+  left_join(coef_logage, by = "term")
+
+tabla_conf
+
+```
+
+
+###Interacciones
+```{r}
+interaccion <- lm(strength ~ cement*water + slag + ash + 
+                         coarse_agg + fine_agg, 
+                         data = datos)
+
+interaccion2 <- lm(strength ~ cement * log_age + slag + ash + water + 
+                  coarse_agg + fine_agg, 
+                         data = datos)
+
+interaccion3 <- lm(strength ~ log_age*water + slag + ash + 
+                         coarse_agg + fine_agg + cement, 
+                         data = datos)
+
+interaccion4 <- lm(strength ~ slag * cement + log_age + water + ash + 
+                         coarse_agg + fine_agg, 
+                         data = datos)
+
+```
+```{r}
+summary(interaccion)
+summary(interaccion2)
+summary(interaccion3)
+summary(interaccion4)
+```
+
+```{r}
+broom::tidy(interaccion, conf.int = TRUE)
+broom::tidy(interaccion2, conf.int = TRUE)
+broom::tidy(interaccion3, conf.int = TRUE)
+broom::tidy(interaccion4, conf.int = TRUE)
+```
+```{r}
+library(ggplot2)
+
+ggplot(datos, aes(x = cement, y = strength, color = water)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción entre Cemento y Agua",
+       x = "Cement",
+       y = "Strength")
+
+ggplot(datos, aes(x = cement, y = strength, color = age)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción Cemento × Edad",
+       x = "Cement",
+       y = "Strength")
+
+ggplot(datos, aes(x = water, y = strength, color = age)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción Agua × Edad",
+       x = "Water",
+       y = "Strength")
+
+
+ggplot(datos, aes(x = cement, y = strength, color = slag)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción Cemento × Slag",
+       x = "Cement",
+       y = "Strength")
+
+```
+```{r}
+datos$water_cat <- cut(datos$water, breaks = 3)
+
+ggplot(datos, aes(x = cement, y = strength, color = water_cat)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción Cemento × Agua",
+       color = "Nivel de agua")
+
+datos$age_cat <- cut(datos$age, breaks = 3)
+
+ggplot(datos, aes(x = cement, y = strength, color = age_cat)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción Cemento × Edad",
+       x = "Cement",
+       y = "Strength",
+       color = "Edad (niveles)")
+
+ggplot(datos, aes(x = water, y = strength, color = age_cat)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción Agua × Edad",
+       x = "Water",
+       y = "Strength",
+       color = "Edad (niveles)")
+
+datos$slag_cat <- cut(datos$slag, breaks = 3)
+
+ggplot(datos, aes(x = cement, y = strength, color = slag_cat)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Interacción Cemento × Slag",
+       x = "Cement",
+       y = "Strength",
+       color = "Nivel de slag")
+
+```
+
+
+```{r}
+interaccion2 <- lm(strength ~ water + cement*water + slag + ash + 
+                         coarse_agg + fine_agg, 
+                         data = datos)
+summary(interaccion2)
+```
+
+
+#Eleccion de variables
+```{r}
+m_null <- lm(SALARY ~ 1, data = datos)
+m_full <- modelo_wls2
+
+scope_list <- list(lower = ~ 1, 
+                   upper  = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age)
+m_step_aic <- MASS::stepAIC(m_null, scope = scope_list, direction = "forward", trace = TRUE)
+summary(m_step_aic)ç
+broom::tidy(m_step_aic, conf.int = TRUE)
+broom::glance(m_step_aic)
+
+n <- nrow(dat)
+m_step_bic <- step(m_null,
+                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age),
+                   direction = "forward",
+                   k = log(n),
+                   trace = TRUE)
+summary(m_step_bic)
+
+```
+
+```{r}
+m_step_aic <- MASS::stepAIC(m_full, direction = "backward", trace = TRUE)
+summary(m_step_aic)
+broom::tidy(m_step_aic, conf.int = TRUE)
+broom::glance(m_step_aic)
+```
+
+```{r}
+scope_list <- list(lower = ~ 1, 
+                   upper  = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age)
+
+m_zero <- lm(strength ~ log_age, data = datos)
+
+m_step_aic <- MASS::stepAIC(m_zero, scope = scope_list, direction = "both", trace = TRUE)
+summary(m_step_aic)
+broom::tidy(m_step_aic, conf.int = TRUE)
+broom::glance(m_step_aic)
+
+
+n <- nrow(dat)
+m_step_bic <- step(m_zero,
+                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
+                  coarse_agg + fine_agg + log_age),
+                   direction = "both",
+                   k = log(n),
+                   trace = TRUE)
+summary(m_step_bic)
+
+```
+
+### Medidas de influencia
+
 ```{r}
 n <- nobs(modelo_wls2)              # número de observaciones
 p <- length(coef(modelo_wls2))     # número de parámetros (incluye intercepto)
@@ -211,6 +432,7 @@ tab_cook <- tibble(
 tab_cook
 
 ```
+
 ```{r}
 dff <- dffits(modelo_wls2)
 
@@ -242,56 +464,4 @@ tab_dfb <- as.data.frame(dfb) %>%
 tab_dfb
 
 ```
-```{r}
-m_null <- lm(SALARY ~ 1, data = datos)
-m_full <- modelo_wls2
 
-scope_list <- list(lower = ~ 1, 
-                   upper  = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age)
-m_step_aic <- MASS::stepAIC(m_null, scope = scope_list, direction = "forward", trace = TRUE)
-summary(m_step_aic)ç
-broom::tidy(m_step_aic, conf.int = TRUE)
-broom::glance(m_step_aic)
-
-n <- nrow(dat)
-m_step_bic <- step(m_null,
-                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age),
-                   direction = "forward",
-                   k = log(n),
-                   trace = TRUE)
-summary(m_step_bic)
-
-```
-```{r}
-m_step_aic <- MASS::stepAIC(m_full, direction = "backward", trace = TRUE)
-summary(m_step_aic)
-broom::tidy(m_step_aic, conf.int = TRUE)
-broom::glance(m_step_aic)
-```
-```{r}
-scope_list <- list(lower = ~ 1, 
-                   upper  = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age)
-
-m_zero <- lm(strength ~ log_age, data = datos)
-
-m_step_aic <- MASS::stepAIC(m_zero, scope = scope_list, direction = "both", trace = TRUE)
-summary(m_step_aic)
-broom::tidy(m_step_aic, conf.int = TRUE)
-broom::glance(m_step_aic)
-
-
-n <- nrow(dat)
-m_step_bic <- step(m_zero,
-                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age),
-                   direction = "both",
-                   k = log(n),
-                   trace = TRUE)
-summary(m_step_bic)
-
-```
-```{r}
-```
