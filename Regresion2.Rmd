@@ -355,56 +355,55 @@ summary(interaccion2)
 
 #Eleccion de variables
 ```{r}
-m_null <- lm(SALARY ~ 1, data = datos)
-m_full <- modelo_wls2
+# Modelo nulo y completo
+m_null <- lm(strength ~ 1, data = datos)
+m_full <- lm(strength ~ cement + slag + ash + water + 
+             coarse_agg + fine_agg + log_age + 
+             log_age*water + slag*cement,  
+             data = datos)
 
-scope_list <- list(lower = ~ 1, 
-                   upper  = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age)
-m_step_aic <- MASS::stepAIC(m_null, scope = scope_list, direction = "forward", trace = TRUE)
-summary(m_step_aic)ç
-broom::tidy(m_step_aic, conf.int = TRUE)
-broom::glance(m_step_aic)
+n <- nrow(datos) 
 
-n <- nrow(dat)
-m_step_bic <- step(m_null,
-                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age),
-                   direction = "forward",
-                   k = log(n),
-                   trace = TRUE)
-summary(m_step_bic)
+scope_list <- list(
+  lower = ~ 1,
+  upper = ~ cement + slag + ash + water + 
+            coarse_agg + fine_agg + log_age +
+            log_age:water + slag:cement
+)
 
+# Forward AIC
+m_step_aic_fwd <- MASS::stepAIC(m_null, scope = scope_list, 
+                                 direction = "forward", trace = TRUE)
+
+broom::tidy(m_step_aic_fwd, conf.int = TRUE)
+broom::glance(m_step_aic_fwd)
+
+# Forward BIC
+m_step_bic_fwd <- step(m_null, scope = scope_list,
+                        direction = "forward", k = log(n), trace = TRUE)
+
+summary(m_step_bic_fwd)
 ```
 
 ```{r}
-m_step_aic <- MASS::stepAIC(m_full, direction = "backward", trace = TRUE)
-summary(m_step_aic)
-broom::tidy(m_step_aic, conf.int = TRUE)
-broom::glance(m_step_aic)
+# Backward AIC
+m_step_aic_back <- MASS::stepAIC(m_full, direction = "backward", trace = TRUE)
+broom::tidy(m_step_aic_back, conf.int = TRUE)
+broom::glance(m_step_aic_back)
 ```
 
 ```{r}
-scope_list <- list(lower = ~ 1, 
-                   upper  = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age)
-
+# Both (stepwise) desde log_age
 m_zero <- lm(strength ~ log_age, data = datos)
+m_step_both <- MASS::stepAIC(m_zero, scope = scope_list,
+                              direction = "both", trace = TRUE)
 
-m_step_aic <- MASS::stepAIC(m_zero, scope = scope_list, direction = "both", trace = TRUE)
-summary(m_step_aic)
-broom::tidy(m_step_aic, conf.int = TRUE)
-broom::glance(m_step_aic)
+# Both BIC
+m_step_bic_both <- step(m_zero, scope = scope_list,
+                         direction = "both", k = log(n), trace = TRUE)
+broom::tidy(m_step_both, conf.int = TRUE)
+broom::glance(m_step_both)
 
-
-n <- nrow(dat)
-m_step_bic <- step(m_zero,
-                   scope = list(lower = ~ 1, upper = ~ cement + slag + ash + water + 
-                  coarse_agg + fine_agg + log_age),
-                   direction = "both",
-                   k = log(n),
-                   trace = TRUE)
-summary(m_step_bic)
 
 ```
 
