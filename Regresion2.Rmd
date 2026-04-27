@@ -259,6 +259,8 @@ interaccion4 <- lm(strength ~ slag * cement + log_age + water + ash +
                          data = datos)
 
 ```
+
+
 ```{r}
 summary(interaccion)
 summary(interaccion2)
@@ -272,6 +274,8 @@ broom::tidy(interaccion2, conf.int = TRUE)
 broom::tidy(interaccion3, conf.int = TRUE)
 broom::tidy(interaccion4, conf.int = TRUE)
 ```
+
+
 ```{r}
 library(ggplot2)
 
@@ -305,6 +309,8 @@ ggplot(datos, aes(x = cement, y = strength, color = slag)) +
        y = "Strength")
 
 ```
+
+
 ```{r}
 datos$water_cat <- cut(datos$water, breaks = 3)
 
@@ -407,6 +413,68 @@ broom::glance(m_step_both)
 
 ```
 
+
+Dados los resultados en cada uno de los métodos ejecutados, se procede a crear el siguiente modelo 
+
+```{r}
+# Centrar variables
+datos$cement_c <- scale(datos$cement, scale = FALSE)
+datos$water_c <- scale(datos$water, scale = FALSE)
+datos$slag_c <- scale(datos$slag, scale = FALSE)
+datos$log_age_c <- scale(datos$log_age, scale = FALSE)
+
+# Modelo WLS con interacciones y variables centradas
+modelo_wls_int_c <- lm(strength ~ log_age_c + cement_c + water_c + slag_c + ash +
+                        log_age_c:water_c + cement_c:slag_c,
+                        data = datos, weights = 1/datos$cement)
+
+summary(modelo_wls_int_c)
+```
+
+
+Se corrobora el cumplimiento de los supuestos del modelo
+
+```{r}
+
+# 1. LINEALIDAD - Residuos vs Valores Ajustados
+plot(modelo_wls_int$fitted.values, modelo_wls_int$residuals,
+     main = "Residuos vs Valores Ajustados (WLS con interacciones)",
+     xlab = "Valores Ajustados",
+     ylab = "Residuos",
+     pch = 20, col = "#2C7BB6")
+abline(h = 0, col = "red", lwd = 2)
+
+# 2. NORMALIDAD - QQ Plot y pruebas
+qqnorm(modelo_wls_int$residuals,
+       main = "QQ-Plot Residuos (WLS con interacciones)",
+       pch = 20, col = "#2C7BB6")
+qqline(modelo_wls_int$residuals, col = "red", lwd = 2)
+
+shapiro.test(modelo_wls_int$residuals)
+ks.test(modelo_wls_int$residuals, "pnorm",
+        mean = mean(modelo_wls_int$residuals),
+        sd = sd(modelo_wls_int$residuals))
+
+# 3. HOMOCEDASTICIDAD - Scale-Location y Breusch-Pagan
+plot(modelo_wls_int$fitted.values, sqrt(abs(modelo_wls_int$residuals)),
+     main = "Scale-Location (WLS con interacciones)",
+     xlab = "Valores Ajustados",
+     ylab = "Raíz de |Residuos|",
+     pch = 20, col = "#2C7BB6")
+abline(lm(sqrt(abs(modelo_wls_int$residuals)) ~ modelo_wls_int$fitted.values),
+       col = "red", lwd = 2)
+
+bptest(modelo_wls_int)
+
+# 4. INDEPENDENCIA
+residuos_wls_int <- residuals(modelo_wls_int)
+dwtest(lm(residuos_wls_int ~ 1))
+
+# 5. MULTICOLINEALIDAD
+vif(modelo_wls_int)
+```
+En los resultados del supuesto de la multicolinealidad, se presentan correlaciones severas, por este motivo, se procede a seguir trabajando con el modelo de WLS2, dado que este controla todos los supuestos de mejor manera.
+
 ### Medidas de influencia
 
 ```{r}
@@ -416,51 +484,215 @@ p <- length(coef(modelo_wls2))     # número de parámetros (incluye intercepto)
 
 ```{r}
 # Cook's Distance
-cook   <- cooks.distance(modelo_wls2)
+cook <- cooks.distance(modelo_wls2)
 
-thr_cook_soft <- 4/(n - p)
-thr_cook_hard <- 1
+plot(cook, type = "h",
+     main = "Distancia de Cook",
+     xlab = "Índice de observación",
+     ylab = "Distancia de Cook",
+     col = "#2C7BB6")
+abline(h = 4/nrow(datos), col = "red", lwd = 2, lty = 2)
 
-tab_cook <- tibble(
-  obs = seq_len(n),
-  cook = as.numeric(cook),
-  flag_soft = cook > thr_cook_soft,
-  flag_hard = cook > thr_cook_hard
-) %>% arrange(desc(cook))
-
-tab_cook
-
-```
-
-```{r}
-dff <- dffits(modelo_wls2)
-
-thr_dffits <- 2*sqrt(p/n)
-
-tab_dff <- tibble(
-  obs = seq_len(n),
-  dffits = as.numeric(dff),
-  flag = abs(dffits) > thr_dffits
-) %>% arrange(desc(abs(dffits)))
-
-tab_dff
+# Observaciones influyentes según Cook
+influyentes_cook <- which(cook > 4/nrow(datos))
+cat("Observaciones influyentes (Cook):", length(influyentes_cook), "\n")
 
 ```
 
 ```{r}
-dfb <- dfbetas(modelo_wls2)
+#DFFITS
+dffits_val <- dffits(modelo_wls2)
+umbral_dffits <- 2 * sqrt(length(coef(modelo_wls2)) / nrow(datos))
 
-thr_dfbetas <- 2/sqrt(n)
+plot(dffits_val, type = "h",
+     main = "DFFITS",
+     xlab = "Índice de observación",
+     ylab = "DFFITS",
+     col = "#2C7BB6")
+abline(h = c(umbral_dffits, -umbral_dffits), col = "red", lwd = 2, lty = 2)
 
-tab_dfb <- as.data.frame(dfb) %>%
-  mutate(obs = seq_len(n)) %>%
-  pivot_longer(
-    cols = -obs, names_to = "coef", values_to = "dfbetas"
-  ) %>%
-  mutate(flag = abs(dfbetas) > thr_dfbetas) %>%
-  arrange(desc(abs(dfbetas)))
+influyentes_dffits <- which(abs(dffits_val) > umbral_dffits)
+cat("Observaciones influyentes (DFFITS):", length(influyentes_dffits), "\n")
+```
 
-tab_dfb
 
+```{r}
+#DFBETAS
+dfbetas_val <- dfbetas(modelo_wls2)
+umbral_dfbetas <- 2 / sqrt(nrow(datos))
+
+# Gráfico para cada coeficiente (solo cement y log_age como más importantes)
+plot(dfbetas_val[, "cement"], type = "h",
+     main = "DFBETAS - Cement",
+     xlab = "Índice de observación",
+     ylab = "DFBETAS",
+     col = "#2C7BB6")
+abline(h = c(umbral_dfbetas, -umbral_dfbetas), col = "red", lwd = 2, lty = 2)
+
+plot(dfbetas_val[, "log_age"], type = "h",
+     main = "DFBETAS - log_age",
+     xlab = "Índice de observación",
+     ylab = "DFBETAS",
+     col = "#2C7BB6")
+abline(h = c(umbral_dfbetas, -umbral_dfbetas), col = "red", lwd = 2, lty = 2)
+
+# Observaciones influyentes según DFBETAS (en cualquier coeficiente)
+influyentes_dfbetas <- which(apply(abs(dfbetas_val), 1, max) > umbral_dfbetas)
+cat("Observaciones influyentes (DFBETAS):", length(influyentes_dfbetas), "\n")
+
+```
+
+
+```{r}
+# Resumen de observaciones influyentes en las 3 medidas
+influyentes_todas <- Reduce(intersect, list(influyentes_cook, 
+                                             influyentes_dffits, 
+                                             influyentes_dfbetas))
+cat("Observaciones influyentes en las 3 medidas:", length(influyentes_todas), "\n")
+print(influyentes_todas)
+
+```
+
+Se procede a reestimar el modelo sin las observaciones influyentes
+
+```{r}
+# Reestimar modelo sin observaciones influyentes
+datos_sin_influyentes <- datos[-influyentes_todas, ]
+
+modelo_wls2_sin <- lm(strength ~ cement + slag + ash + water + 
+                       coarse_agg + fine_agg + log_age,
+                       data = datos_sin_influyentes, 
+                       weights = 1/datos_sin_influyentes$cement)
+
+summary(modelo_wls2_sin)
+```
+
+```{r}
+# Extraer las 65 observaciones influyentes
+obs_influyentes <- datos[influyentes_todas, ]
+
+# Resumen estadístico de las influyentes vs el resto
+cat("=== OBSERVACIONES INFLUYENTES ===\n")
+summary(obs_influyentes[, c("cement", "slag", "ash", "water", 
+                              "coarse_agg", "fine_agg", "age", "strength")])
+
+cat("\n=== RESTO DE OBSERVACIONES ===\n")
+summary(datos[-influyentes_todas, c("cement", "slag", "ash", "water", 
+                                     "coarse_agg", "fine_agg", "age", "strength")])
+
+# Ver si tienen valores extremos
+cat("\n=== VALORES EXTREMOS EN INFLUYENTES ===\n")
+cat("Resistencia máxima:", max(obs_influyentes$strength), "\n")
+cat("Resistencia mínima:", min(obs_influyentes$strength), "\n")
+cat("Edad máxima:", max(obs_influyentes$age), "\n")
+cat("Edad mínima:", min(obs_influyentes$age), "\n")
+cat("Cemento máximo:", max(obs_influyentes$cement), "\n")
+cat("Cemento mínimo:", min(obs_influyentes$cement), "\n")
+
+# Gráfico comparativo de resistencia
+boxplot(datos$strength[-influyentes_todas], obs_influyentes$strength,
+        names = c("No influyentes", "Influyentes"),
+        main = "Comparación de resistencia",
+        ylab = "Resistencia (MPa)",
+        col = c("#2C7BB6", "#D7191C"))
+```
+Dados los resultados se decide no eliminar las observaciones dado que: 
+
+- No son errores de medición ni datos incorrectos — son mezclas reales de laboratorio con características válidas.
+- Su influencia se explica directamente por el esquema de ponderación 1/cement — mezclas con poco cemento naturalmente tienen más peso.
+- Eliminarlas sesgaría el modelo hacia mezclas con alto contenido de cemento.
+
+
+#Validación fuera de la muestra y pronosticos
+```{r}
+# Validación fuera de la muestra
+
+
+set.seed(123) # Para reproducibilidad
+
+# Dividir dataset: 80% entrenamiento, 20% prueba
+n <- nrow(datos)
+indices_train <- sample(1:n, size = 0.8 * n)
+datos_train <- datos[indices_train, ]
+datos_test <- datos[-indices_train, ]
+
+cat("Observaciones entrenamiento:", nrow(datos_train), "\n")
+cat("Observaciones prueba:", nrow(datos_test), "\n")
+
+# Reestimar WLS2 con datos de entrenamiento
+modelo_wls2_train <- lm(strength ~ cement + slag + ash + water + 
+                         coarse_agg + fine_agg + log_age,
+                         data = datos_train, 
+                         weights = 1/datos_train$cement)
+
+summary(modelo_wls2_train)
+
+# Predecir sobre datos de prueba
+predicciones <- predict(modelo_wls2_train, newdata = datos_test)
+
+# Métricas de error
+mae <- mean(abs(predicciones - datos_test$strength))
+rmse <- sqrt(mean((predicciones - datos_test$strength)^2))
+r2_test <- cor(predicciones, datos_test$strength)^2
+
+cat("\n=== MÉTRICAS FUERA DE MUESTRA ===\n")
+cat("MAE:", round(mae, 4), "\n")
+cat("RMSE:", round(rmse, 4), "\n")
+cat("R² fuera de muestra:", round(r2_test, 4), "\n")
+cat("R² ajustado dentro de muestra:", 0.8382, "\n")
+
+# Gráfico predicciones vs valores reales
+plot(datos_test$strength, predicciones,
+     main = "Valores reales vs Predicciones (fuera de muestra)",
+     xlab = "Resistencia real (MPa)",
+     ylab = "Resistencia predicha (MPa)",
+     pch = 20, col = "#2C7BB6", alpha = 0.5)
+abline(a = 0, b = 1, col = "red", lwd = 2)
+```
+
+```{r}
+# Pronósticos
+
+# Definir nuevas mezclas para pronosticar
+nuevas_mezclas <- data.frame(
+  cement     = c(300, 200, 450),
+  slag       = c(100, 150,   0),
+  ash        = c( 50, 100,   0),
+  water      = c(180, 170, 200),
+  coarse_agg = c(950, 900,1000),
+  fine_agg   = c(750, 700, 800),
+  age        = c( 28,  90, 365)
+)
+
+# Crear log_age para las nuevas mezclas
+nuevas_mezclas$log_age <- log(nuevas_mezclas$age)
+
+# Pronósticos con intervalo de confianza (media)
+pronostico_ic <- predict(modelo_wls2, newdata = nuevas_mezclas, 
+                          interval = "confidence", level = 0.95)
+
+# Pronósticos con intervalo de predicción (observación individual)
+pronostico_ip <- predict(modelo_wls2, newdata = nuevas_mezclas, 
+                          interval = "prediction", level = 0.95)
+
+# Mostrar resultados
+cat("=== INTERVALOS DE CONFIANZA (95%) ===\n")
+print(round(pronostico_ic, 2))
+
+cat("\n=== INTERVALOS DE PREDICCIÓN (95%) ===\n")
+print(round(pronostico_ip, 2))
+
+# Tabla resumen
+resultados <- data.frame(
+  Mezcla = c("Mezcla 1 (28 días)", "Mezcla 2 (90 días)", "Mezcla 3 (365 días)"),
+  Prediccion = round(pronostico_ip[, "fit"], 2),
+  IC_inferior = round(pronostico_ic[, "lwr"], 2),
+  IC_superior = round(pronostico_ic[, "upr"], 2),
+  IP_inferior = round(pronostico_ip[, "lwr"], 2),
+  IP_superior = round(pronostico_ip[, "upr"], 2)
+)
+
+cat("\n=== TABLA RESUMEN DE PRONÓSTICOS ===\n")
+print(resultados)
 ```
 
